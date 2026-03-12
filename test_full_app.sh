@@ -5,6 +5,48 @@ echo "========================================="
 echo "AudioClick - Complete Application Test"
 echo "========================================="
 
+# Setup backend and start server
+echo ""
+echo "Setting up backend..."
+cd backend
+if [ ! -d "venv" ]; then
+    echo "Creating Python virtual environment..."
+    python3 -m venv venv
+fi
+source venv/bin/activate
+echo "Installing dependencies..."
+pip install -r requirements.txt >/dev/null 2>&1 || true
+
+# Start backend server in background
+echo "Starting backend server on port 5001..."
+python main.py >/dev/null 2>&1 &
+BACKEND_PID=$!
+cd ..
+
+# Wait for backend to be ready (max 10 seconds)
+echo "Waiting for backend to be ready..."
+for i in {1..20}; do
+    if curl -s http://localhost:5001/health >/dev/null 2>&1; then
+        echo "✅ Backend is ready"
+        break
+    fi
+    if [ $i -eq 20 ]; then
+        echo "❌ Backend failed to start"
+        kill $BACKEND_PID 2>/dev/null || true
+        exit 1
+    fi
+    sleep 0.5
+done
+
+# Cleanup function
+cleanup() {
+    echo ""
+    echo "Cleaning up..."
+    kill $BACKEND_PID 2>/dev/null || true
+    exit
+}
+trap cleanup EXIT INT
+
 echo ""
 echo "1. Testing Backend API..."
 echo "------------------------"
@@ -15,7 +57,7 @@ if curl -s http://localhost:5001/health > /dev/null; then
     curl -s http://localhost:5001/health | python3 -m json.tool 2>/dev/null || echo "   $(curl -s http://localhost:5001/health)"
 else
     echo "❌ Backend is not running"
-    echo "   Start it with: cd backend && python app.py"
+    exit 1
 fi
 
 echo ""
@@ -34,8 +76,10 @@ echo ""
 echo "3. Testing File Upload Capability..."
 echo "-----------------------------------"
 
-# Create a test audio file if needed
+# Go to backend (venv is already activated from startup)
 cd backend
+
+# Create a test audio file if needed
 if [ ! -f "test_audio.wav" ]; then
     echo "Creating test audio file..."
     python3 -c "
